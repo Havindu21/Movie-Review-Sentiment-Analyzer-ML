@@ -1,16 +1,27 @@
 from fastapi import FastAPI
-import pickle
+from transformers import DistilBertForSequenceClassification, DistilBertTokenizerFast
+import torch
 
 app = FastAPI()
 
-# Load model & vectorizer
-model = pickle.load(open("models/sentiment_model.pkl", "rb"))
-vectorizer = pickle.load(open("models/vectorizer.pkl", "rb"))
+# Load your trained model
+model = DistilBertForSequenceClassification.from_pretrained("model")
+tokenizer = DistilBertTokenizerFast.from_pretrained("model")
 
 @app.post("/predict")
-def predict(data: dict):
-    review = data["review"]
-    review_vec = vectorizer.transform([review])
-    prediction = model.predict(review_vec)[0]
-    sentiment = "positive" if prediction == 1 else "negative"
-    return {"sentiment": sentiment}
+async def predict(data: dict):
+    text = data["review"]
+    inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True)
+
+    with torch.no_grad():
+        outputs = model(**inputs)
+        probs = torch.softmax(outputs.logits, dim=1)
+        pred = torch.argmax(probs).item()
+        confidence = probs[0][pred].item()
+
+    sentiment = "positive" if pred == 1 else "negative"
+
+    return {
+        "sentiment": sentiment,
+        "confidence": confidence
+    }
